@@ -112,6 +112,19 @@ final class Future<A> {
         }
     }
     
+    func map<B>(transform: @escaping (A) -> B?) -> Future<B> {
+        return Future<B> { completion in
+            self.onResult { result in
+                switch result {
+                case .success(let value):
+                    completion(Result(transform(value), or: "failed to transform \(value)"))
+                case .error(let error):
+                    completion(.error(error))
+                }
+            }
+        }
+    }
+    
     func flatMap<B>(transform: @escaping (A) -> Future<B>) -> Future<B> {
         return Future<B> { completion in
             self.onResult { result in
@@ -127,18 +140,26 @@ final class Future<A> {
 }
 
 
+extension URLSession {
+    func dataTask(with url: URL) -> Future<(Data, URLResponse?)> {
+        return Future { completion in
+            self.dataTask(with: url, completionHandler: { data, response, error in
+                guard let data = data else {
+                    completion(.error(error ?? "No data"))
+                    return
+                }
+                completion(Result((data, response), or: ""))
+            }).resume()
+        }
+    }
+}
+
 final class Webservice {
     let session = URLSession(configuration: URLSessionConfiguration.ephemeral)
     
     func load<A>(_ resource: Resource<A>) -> Future<A> {
-        return Future { completion in
-            session.dataTask(with: resource.url, completionHandler: { data, _, _ in
-                guard let data = data else {
-                    completion(.error("No data"))
-                    return
-                }
-                completion(Result(resource.parse(data), or: "Couldn't parse data"))
-            }).resume()
+        return session.dataTask(with: resource.url).map { data, _ in
+            return resource.parse(data)
         }
     }
 }
